@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
@@ -19,11 +19,33 @@ export default function LoginForm({ redirectTo = '/dashboard' }: LoginFormProps)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
 
-  const { signIn } = useAuth()
+  const { signIn, user, loading: authLoading } = useAuth()
   const router = useRouter()
+
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (user && !authLoading) {
+      console.log('🔄 User already authenticated, redirecting to:', redirectTo)
+      router.push(redirectTo)
+    }
+  }, [user, authLoading, router, redirectTo])
+
+  // Show loading state if auth is still initializing
+  if (authLoading) {
+    return (
+      <div className="w-full max-w-md mx-auto">
+        <div className="bg-white rounded-2xl shadow-xl border border-gray-200 p-8 text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    )
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    console.log('📝 Login form submitted for:', email)
+    
     setIsLoading(true)
     setError('')
 
@@ -31,13 +53,20 @@ export default function LoginForm({ redirectTo = '/dashboard' }: LoginFormProps)
       const { error } = await signIn(email, password)
       
       if (error) {
+        console.error('❌ Login form error:', error.message)
         setError(error.message)
+        setIsLoading(false)
       } else {
-        router.push(redirectTo)
+        console.log('✅ Login successful, redirecting to:', redirectTo)
+        // Small delay to ensure auth state updates
+        setTimeout(() => {
+          router.push(redirectTo)
+          setIsLoading(false)
+        }, 1000)
       }
-    } catch {
+    } catch (err) {
+      console.error('❌ Login form exception:', err)
       setError('An unexpected error occurred')
-    } finally {
       setIsLoading(false)
     }
   }

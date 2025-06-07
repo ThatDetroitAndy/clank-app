@@ -72,6 +72,7 @@ export default function Home() {
           </h3>
           <ChatWrapper />
         </div>
+
       </main>
 
       {/* Footer */}

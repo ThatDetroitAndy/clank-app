@@ -1,9 +1,16 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable react-hooks/exhaustive-deps */
 'use client'
 
 import { createContext, useContext, useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { AuthContextType, AuthUser, UserProfile, AuthState } from '@/types/auth'
 import type { User } from '@supabase/supabase-js'
+
+interface SupabaseResponse {
+  data: any
+  error: any
+}
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
@@ -32,15 +39,27 @@ export function AuthProvider({ children }: AuthProviderProps) {
   // Fetch user profile from database
   const fetchUserProfile = useCallback(async (user: User): Promise<UserProfile | null> => {
     try {
-      const { data: profile, error } = await supabase
+      console.log('📋 Fetching profile for user:', user.id)
+      
+      // Add timeout protection for profile fetch
+      const profilePromise = supabase
         .from('users')
         .select('*')
         .eq('id', user.id)
         .single()
 
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Profile fetch timeout after 10 seconds')), 10000)
+      )
+      
+      const { data: profile, error } = await Promise.race([profilePromise, timeoutPromise]) as SupabaseResponse
+
       if (error) {
+        console.log('📋 Profile fetch error:', error.message, 'Code:', error.code)
+        
         // If user doesn't exist in our database, create them
         if (error.code === 'PGRST116') {
+          console.log('👤 User not found in database, creating profile...')
           const newUser = {
             id: user.id,
             email: user.email!,
@@ -50,84 +69,71 @@ export function AuthProvider({ children }: AuthProviderProps) {
             messages_used: 0,
           }
 
-          const { data: createdProfile, error: createError } = await supabase
+          const createPromise = supabase
             .from('users')
             .insert(newUser)
             .select()
             .single()
+            
+          const createTimeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Profile creation timeout after 10 seconds')), 10000)
+          )
+
+          const { data: createdProfile, error: createError } = await Promise.race([createPromise, createTimeoutPromise]) as SupabaseResponse
 
           if (createError) {
-            console.error('Error creating user profile:', createError)
+            console.error('❌ Error creating user profile:', createError)
             return null
           }
 
+          console.log('✅ User profile created successfully')
           return createdProfile
         }
-        console.error('Error fetching user profile:', error)
+        console.error('❌ Profile fetch failed:', error)
         return null
       }
 
+      console.log('✅ Profile fetched successfully')
       return profile
     } catch (error) {
-      console.error('Error in fetchUserProfile:', error)
+      console.error('❌ Exception in fetchUserProfile:', error)
       return null
     }
   }, [supabase])
 
   // Initialize auth state
   useEffect(() => {
-    const initializeAuth = async () => {
-      try {
-        const { data: { session }, error } = await supabase.auth.getSession()
-        
-        if (error) {
-          console.error('Error getting session:', error)
-          setState(prev => ({ ...prev, loading: false, error: error.message }))
-          return
-        }
-
-        if (session?.user) {
-          const profile = await fetchUserProfile(session.user)
-          setState({
-            user: session.user as AuthUser,
-            profile,
-            loading: false,
-            error: null,
-          })
-        } else {
-          setState({
-            user: null,
-            profile: null,
-            loading: false,
-            error: null,
-          })
-        }
-      } catch (error) {
-        console.error('Error initializing auth:', error)
-        setState(prev => ({ 
-          ...prev, 
-          loading: false, 
-          error: error instanceof Error ? error.message : 'Unknown error' 
-        }))
-      }
-    }
-
-    initializeAuth()
+    console.log('🔄 Initializing auth context...')
+    setState(prev => ({ ...prev, loading: false }))
+    console.log('🔄 Auth context initialized - loading set to false')
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        console.log('Auth state changed:', event, session?.user?.email)
+        console.log('🔔 Auth state changed:', event, session?.user?.email)
         
         if (session?.user) {
-          const profile = await fetchUserProfile(session.user)
-          setState({
-            user: session.user as AuthUser,
-            profile,
-            loading: false,
-            error: null,
-          })
+          try {
+            console.log('👤 Session user found, fetching profile...')
+            const profile = await fetchUserProfile(session.user)
+            setState({
+              user: session.user as AuthUser,
+              profile,
+              loading: false,
+              error: null,
+            })
+            console.log('✅ Auth state updated with user and profile')
+          } catch (error) {
+            console.error('❌ Error fetching profile in auth state change:', error)
+            setState({
+              user: session.user as AuthUser,
+              profile: null,
+              loading: false,
+              error: null,
+            })
+          }
         } else {
+          console.log('👤 No session user, clearing auth state')
           setState({
             user: null,
             profile: null,
@@ -138,27 +144,75 @@ export function AuthProvider({ children }: AuthProviderProps) {
       }
     )
 
-    return () => subscription.unsubscribe()
-  }, [fetchUserProfile, supabase.auth])
+    return () => {
+      console.log('🧹 Cleaning up auth subscription')
+      subscription.unsubscribe()
+    }
+  }, [supabase.auth]) // Removed fetchUserProfile to prevent infinite loops
 
   // Sign in
   const signIn = async (email: string, password: string) => {
     try {
+      console.log('🔐 Starting sign in process for:', email)
       setState(prev => ({ ...prev, loading: true, error: null }))
       
-      const { error } = await supabase.auth.signInWithPassword({
+      // Add timeout protection for Supabase call
+      console.log('📡 Making Supabase signin request...')
+      const signinPromise = supabase.auth.signInWithPassword({
         email,
         password,
       })
+      
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Signin request timeout after 15 seconds')), 15000)
+      )
+      
+      const { data, error } = await Promise.race([signinPromise, timeoutPromise]) as SupabaseResponse
 
       if (error) {
+        console.error('❌ Sign in error:', error)
         setState(prev => ({ ...prev, loading: false, error: error.message }))
         return { error }
       }
 
+      console.log('✅ Sign in successful:', data.user?.email)
+      console.log('👤 User data received:', !!data.user)
+      
+      // Handle successful signin with proper error handling
+      if (data.user) {
+        try {
+          console.log('📋 Fetching user profile...')
+          const profile = await fetchUserProfile(data.user)
+          console.log('✅ Profile fetched:', !!profile)
+          
+          setState({
+            user: data.user as AuthUser,
+            profile,
+            loading: false,
+            error: null,
+          })
+          
+          console.log('🎉 Auth context signin completed successfully')
+        } catch (profileError) {
+          console.error('⚠️ Profile fetch failed, but signin succeeded:', profileError)
+          // Set user without profile if profile fetch fails
+          setState({
+            user: data.user as AuthUser,
+            profile: null,
+            loading: false,
+            error: null,
+          })
+        }
+      } else {
+        console.warn('⚠️ No user data in signin response')
+        setState(prev => ({ ...prev, loading: false }))
+      }
+      
       return { error: null }
     } catch (error) {
+      console.error('❌ Sign in exception:', error)
       const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      console.error('📋 Error details:', errorMessage)
       setState(prev => ({ ...prev, loading: false, error: errorMessage }))
       return { error: new Error(errorMessage) }
     }

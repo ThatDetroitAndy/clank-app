@@ -66,26 +66,30 @@ export default function AuthModal({ isOpen, onClose, onSuccess, mode, onModeSwit
     if (!validateForm()) return
 
     setIsLoading(true)
+    console.log(`🔐 Auth modal: Starting ${mode} for`, formData.email)
 
     try {
-      let result
-      if (mode === 'login') {
-        result = await signIn(formData.email, formData.password)
-      } else {
-        result = await signUp(formData.email, formData.password, formData.name)
-      }
+      const result = mode === 'login' 
+        ? await signIn(formData.email, formData.password)
+        : await signUp(formData.email, formData.password, formData.name)
       
       if (result.error) {
+        console.error(`❌ Auth modal ${mode} error:`, result.error.message)
         setError(result.error.message)
       } else {
+        console.log(`✅ Auth modal ${mode} successful`)
         if (mode === 'signup') {
           setSuccess(true)
         } else {
-          onSuccess()
+          // Small delay to ensure auth state propagates
+          setTimeout(() => {
+            onSuccess()
+          }, 500)
         }
       }
-    } catch {
-      setError('An unexpected error occurred')
+    } catch (error) {
+      console.error(`❌ Auth modal ${mode} exception:`, error)
+      setError(error instanceof Error ? error.message : 'An unexpected error occurred')
     } finally {
       setIsLoading(false)
     }
